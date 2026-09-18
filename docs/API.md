@@ -13,7 +13,16 @@
 | GET/POST | `/api/plans` | Список / создать `{group_id, discipline_id, semester}` | `{"id":1}` |
 | GET/POST | `/api/grades` | Список / создать `{student_id, discipline_id, semester, value}` | `{"id":1}` |
 | GET | `/api/report/avg` | Средний балл | `[{"fio":"...","avg_score":4.5}]` |
+| POST | `/api/register` | Регистрация `{username, password}` | `{"id":1,"username":"..."}` |
+| POST | `/api/login` | Вход `{username, password}` | `{"username":"..."}` |
+| POST | `/api/logout` | Выход | `{"status":"ok"}` |
+| GET | `/api/me` | Текущий пользователь (401 без входа) | `{"username":"..."}` |
 | GET | `/api/docs` | Эта же справка в JSON | — |
+
+Аутентификация: сессии на cookies. Веб-страницы `/register`, `/login`, `/logout`.
+Изменение данных через веб-формы (`POST /web/*`) требует входа, без входа —
+перенаправление на `/login`. Стартовый пользователь создаётся автоматически:
+логин `admin`, пароль из переменной `ADMIN_PASSWORD`.
 
 Примеры (curl):
 ```

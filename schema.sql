@@ -34,3 +34,9 @@ CREATE TABLE IF NOT EXISTS grades (
     value INTEGER NOT NULL CHECK(value BETWEEN 2 AND 5),
     UNIQUE(student_id, discipline_id, semester)
 );
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,   -- логин
+    password_hash TEXT NOT NULL,     -- только хеш пароля, не сам пароль
+    role TEXT NOT NULL DEFAULT 'teacher'
+);

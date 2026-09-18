@@ -8,9 +8,11 @@
 3. Скопировать настройки: Windows — `copy .env.example .env`, Linux/Mac — `cp .env.example .env`
 4. Запустить: `python app.py`
 5. Открыть в браузере: http://localhost:5000/
-6. Проверка: `python check.py`
+6. Войти (демо-логин `admin`, пароль из `ADMIN_PASSWORD`) или зарегистрироваться.
+7. Проверка: `python check.py`
 
-Переменные окружения (файл `.env` не коммитится): `DATABASE_PATH`, `PORT`, `APP_VERSION`.
+Переменные окружения (файл `.env` не коммитится): `DATABASE_PATH`, `PORT`,
+`APP_VERSION`, `SECRET_KEY`, `ADMIN_PASSWORD`.
 
 ## Структура проекта
 - `app.py` — приложение (API, веб-интерфейс, бизнес-правило).
@@ -21,8 +23,10 @@
 - `.env.example` — пример настроек без секретов.
 
 ## Сущности (вариант 8)
-`groups` → `students`, `disciplines`, `study_plans` (учебный план группы), `grades`.
+`groups` → `students`, `disciplines`, `study_plans` (учебный план группы), `grades`, `users`.
 Бизнес-правило: оценку можно поставить только если дисциплина есть в учебном плане группы студента на этот семестр, оценка 2–5. Реализация — функция `check_business_rule` в `app.py`.
+Аутентификация: регистрация и вход, пароли хранятся в виде хеша; изменение данных
+через веб-формы требует входа.
 
 ## Правила изменений (кратко, полный текст — в docs/RULES.md)
 - Задача → ветка `feature/*` → коммиты → Pull Request → проверки → merge в `main`.

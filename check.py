@@ -69,9 +69,43 @@ check("Нет year -> 400", bad3.status_code == 400)
 rep = c.get("/api/report/avg")
 check("GET /api/report/avg", rep.status_code == 200 and rep.get_json()[0]["avg_score"] == 5.0)
 
-# Веб-морда открывается
+# Веб-страница открывается
 w = c.get("/")
 check("GET / (веб-интерфейс)", w.status_code == 200 and "Успеваемость" in w.get_data(as_text=True))
+
+# --- Аутентификация ---
+r = c.post("/api/register", json={"username": "t", "password": "pw"})
+check("Короткий логин/пароль отклонены", r.status_code == 400)
+
+r = c.post("/api/register", json={"username": "teacher1", "password": "pass123"})
+check("POST /api/register", r.status_code == 201)
+
+r = c.post("/api/register", json={"username": "teacher1", "password": "pass123"})
+check("Повторная регистрация отклонена", r.status_code == 400)
+
+r = c.post("/api/login", json={"username": "teacher1", "password": "wrong"})
+check("Неверный пароль отклонён", r.status_code == 401)
+
+r = c.post("/api/login", json={"username": "teacher1", "password": "pass123"})
+check("POST /api/login", r.status_code == 200)
+
+me = c.get("/api/me")
+check("GET /api/me после входа", me.status_code == 200 and me.get_json()["username"] == "teacher1")
+
+# Без входа изменение через веб-форму запрещено
+anon = app.test_client()
+anon.get("/")  # отдельная сессия без входа
+r = anon.post("/web/groups", data={"name": "X-1", "year": "2026"})
+check("Веб-форма без входа ведёт на /login", r.status_code == 302 and "/login" in r.headers["Location"])
+
+# Со входом веб-форма работает
+r = c.post("/web/groups", data={"name": "ИМ-32", "year": "2026"})
+check("Веб-форма со входом работает", r.status_code == 302)
+
+r = c.post("/api/logout")
+check("POST /api/logout", r.status_code == 200)
+me = c.get("/api/me")
+check("GET /api/me после выхода -> 401", me.status_code == 401)
 
 print()
 if fails:
