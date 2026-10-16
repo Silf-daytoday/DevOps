@@ -1,6 +1,6 @@
 # ЛР2. Развертывание в Linux без контейнеров
 
-Приложение варианта 8: Flask + PostgreSQL 16, версия разработки `0.2.0-dev`.
+Приложение варианта 8: Flask + PostgreSQL 16, релизная версия `0.2.0`.
 Интерфейс и API ЛР1 сохранены. Старый `v0.1.0` остается историей ЛР1.
 Ниже — команды для ручного выполнения. Наличие инструкции не означает, что
 серверные проверки уже выполнены.
@@ -219,7 +219,7 @@ DB_NAME=devops
 DB_USER=devops_app
 DB_PASSWORD=CHANGE_ME_DATABASE_PASSWORD
 PORT=5000
-APP_VERSION=0.2.0-dev
+APP_VERSION=0.2.0
 SECRET_KEY=CHANGE_ME_RANDOM_SESSION_SECRET
 ADMIN_PASSWORD=CHANGE_ME_INITIAL_ADMIN_PASSWORD
 ```
@@ -290,8 +290,8 @@ sudo ufw status numbered
 Если уже есть широкие разрешения на 22/5000, проверьте их и удалите только лишние
 по фактическим номерам, затем снова покажите status. Не делайте безусловный ufw reset.
 
-На db-server уже должны быть incoming deny, outgoing allow, TCP 22 только с .77.1
-и TCP 5432 только с .77.10. Дополнительных разрешений для Windows на БД не требуется.
+На db-server уже должны быть incoming deny, outgoing allow, TCP 22 только с клиентского
+узла и TCP 5432 только с app-server. Дополнительных разрешений для Windows на БД не требуется.
 
 ## 7. Права на файлы
 
@@ -426,7 +426,7 @@ psql -h 192.0.2.20 -U devops_app -d devops -W -c "SELECT current_user, inet_clie
 psql -h 192.0.2.20 -U devops_app -d devops -W -c "SELECT has_database_privilege(current_user,current_database(),'CREATE') AS can_create_schema, has_schema_privilege(current_user,'public','CREATE') AS can_create_table;"
 ```
 
-Подключение успешно, адрес клиента .77.10, оба CREATE — false.
+Подключение успешно, адрес клиента соответствует app-server, оба CREATE — false.
 SQL-проверка нужна одновременно с сетевой: выключенная БД не доказывает firewall.
 
 ### Перезагрузка
@@ -460,8 +460,8 @@ SSH app-server: `sudo systemctl is-enabled devops-app`, `sudo reboot`.
    /etc/systemd/system/postgresql@16-main.service.d/10-network.conf запишите
    [Unit], Wants=network-online.target, After=network-online.target.
    Затем daemon-reload и restart postgresql@16-main.
-10. UFW db-server: incoming deny, outgoing allow, разрешить TCP 22 с .77.1
-    и TCP 5432 с .77.10, затем enable.
+10. UFW db-server: incoming deny, outgoing allow, разрешить TCP 22 с клиентского
+    узла и TCP 5432 с app-server, затем enable.
 11. Выполните разделы 3–8: схема, тесты, установка, env, firewall, защита.
 
 Не включайте GUI, контейнеры и сторонние способы удаленного администрирования.
