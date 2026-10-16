@@ -1,17 +1,24 @@
-"""Локальная проверка для ЛР1: гоняет API и бизнес-правило. Запуск: python check.py"""
+"""Проверки приложения, только на отдельной PostgreSQL-базе devops_test."""
 import os
-import tempfile
+import secrets
 
-os.environ["DATABASE_PATH"] = os.path.join(tempfile.gettempdir(), "lr1_check.db")
-try:
-    os.remove(os.environ["DATABASE_PATH"])
-except FileNotFoundError:
-    pass
+# Отказ ДО импорта приложения, подключения и тем более очистки.
+if os.environ.get("DB_NAME") != "devops_test" or os.environ.get("DB_USER") != "devops_test":
+    raise SystemExit("ОТКАЗ: проверки разрешены только с DB_NAME=devops_test и DB_USER=devops_test")
 
-from app import app, init_db  # noqa: E402
+os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
+os.environ.setdefault("ADMIN_PASSWORD", secrets.token_urlsafe(24))
+
+from app import app, init_db, get_db  # noqa: E402
 
 app.config["TESTING"] = True
 with app.app_context():
+    db = get_db()
+    identity = db.execute("SELECT current_database() AS db, current_user AS role").fetchone()
+    if identity != {"db": "devops_test", "role": "devops_test"}:
+        raise SystemExit("ОТКАЗ: фактические база/пользователь не соответствуют тестовому окружению")
+    db.execute("TRUNCATE groups, students, disciplines, study_plans, grades, users RESTART IDENTITY")
+    db.commit()
     init_db()
 c = app.test_client()
 
@@ -22,6 +29,14 @@ def check(name, cond):
     print(("OK  " if cond else "FAIL") + " " + name)
     if not cond:
         fails.append(name)
+
+
+# Повторная инициализация не должна менять пароль уже созданного admin.
+with app.app_context():
+    before = get_db().execute("SELECT password_hash FROM users WHERE username='admin'").fetchone()
+    init_db()
+    after = get_db().execute("SELECT password_hash FROM users WHERE username='admin'").fetchone()
+check("Повторный init-admin сохраняет пароль", before == after)
 
 
 # health + version
@@ -101,6 +116,29 @@ check("Веб-форма без входа ведёт на /login", r.status_cod
 # Со входом веб-форма работает
 r = c.post("/web/groups", data={"name": "ИМ-32", "year": "2026"})
 check("Веб-форма со входом работает", r.status_code == 302)
+
+# В PostgreSQL после IntegrityError нужен rollback перед current_user() в page().
+r = c.post("/web/groups", data={"name": "ИМ-32", "year": "2026"})
+check("Дубликат в веб-форме -> 400, транзакция восстановлена", r.status_code == 400)
+check("БД доступна после дубликата", c.get("/").status_code == 200)
+r = c.post("/web/groups", data={"name": "X", "year": "not-a-number"})
+check("Нечисловое поле веб-формы -> 400", r.status_code == 400)
+
+for path, payload in (
+    ("/api/students", {"fio": "X", "group_id": "bad", "student_no": "X"}),
+    ("/api/disciplines", {"name": "X", "credits": "bad"}),
+    ("/api/groups", [1, 2]),
+):
+    check(f"Некорректный ввод {path} -> 400", c.post(path, json=payload).status_code == 400)
+
+student_without_grades = c.post("/api/students", json={
+    "fio": "Без оценок", "group_id": gid, "student_no": "Z-002",
+})
+check("Студент без оценок создан", student_without_grades.status_code == 201)
+report = c.get("/api/report/avg").get_json()
+check("Средний балл — число, без оценок — NULL в конце",
+      report[0]["id"] == sid and isinstance(report[0]["avg_score"], (int, float))
+      and report[-1]["avg_score"] is None)
 
 r = c.post("/api/logout")
 check("POST /api/logout", r.status_code == 200)
