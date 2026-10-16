@@ -11,11 +11,20 @@ htmlcov/
 
 # --- App data / secrets (НИКОГДА не коммитить!) ---
 .env
+.env.*
+!.env.example
+app.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+devops_lr2*
 data/*.db
 data/*.sqlite*
 *.dump
 *.sql.gz
 backups/
+lr2-source.tar.gz
 
 # --- OS / IDE ---
 .DS_Store

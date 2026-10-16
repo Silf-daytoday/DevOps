@@ -1,4 +1,4 @@
-"""Учёт успеваемости студентов. Вариант 8. ЛР1.
+"""Учёт успеваемости студентов. Вариант 8. ЛР2.
 Сущности: groups -> students, disciplines, study_plans, grades, users.
 Бизнес-правило: оценка выставляется только если дисциплина
 включена в учебный план группы студента на указанный семестр (оценка 2–5).
@@ -6,69 +6,45 @@
 только в виде хеша). Изменение данных через веб-формы требует входа.
 """
 import html
+import logging
 import os
-import sqlite3
 from functools import wraps
 
+import click
+import psycopg
+from psycopg.rows import dict_row
 from flask import Flask, request, jsonify, g, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import BadRequest
 
 # --- Конфигурация через переменные окружения ---
-DB_PATH = os.environ.get("DATABASE_PATH", "data/app.db")
+def required_env(name):
+    value = os.environ.get(name)
+    if not value or value.startswith("CHANGE_ME"):
+        raise RuntimeError(f"Задайте переменную окружения {name}")
+    return value
+
+
+DB_CONFIG = {
+    "host": required_env("DB_HOST"),
+    "port": int(os.environ.get("DB_PORT", "5432")),
+    "dbname": required_env("DB_NAME"),
+    "user": required_env("DB_USER"),
+    "password": required_env("DB_PASSWORD"),
+    "connect_timeout": 3,
+    "row_factory": dict_row,
+}
 PORT = int(os.environ.get("PORT", "5000"))
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.0")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.0")
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS groups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    year INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS students (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fio TEXT NOT NULL,
-    group_id INTEGER NOT NULL REFERENCES groups(id),
-    student_no TEXT UNIQUE NOT NULL
-);
-CREATE TABLE IF NOT EXISTS disciplines (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    credits INTEGER NOT NULL DEFAULT 3
-);
-CREATE TABLE IF NOT EXISTS study_plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_id INTEGER NOT NULL REFERENCES groups(id),
-    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
-    semester INTEGER NOT NULL,
-    UNIQUE(group_id, discipline_id, semester)
-);
-CREATE TABLE IF NOT EXISTS grades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER NOT NULL REFERENCES students(id),
-    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
-    semester INTEGER NOT NULL,
-    value INTEGER NOT NULL CHECK(value BETWEEN 2 AND 5),
-    UNIQUE(student_id, discipline_id, semester)
-);
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'teacher'
-);
-"""
+app.secret_key = required_env("SECRET_KEY")
 
 
 def get_db():
     if "db" not in g:
-        os.makedirs(os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else ".", exist_ok=True)
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = psycopg.connect(**DB_CONFIG)
     return g.db
 
 
@@ -80,16 +56,21 @@ def close_db(exc=None):
 
 
 def init_db():
+    """Создать только начального admin; схема применяется администратором отдельно."""
     db = get_db()
-    db.executescript(SCHEMA)
-    # Стартовый администратор (логин: admin, пароль из ADMIN_PASSWORD).
-    row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
-    if not row:
-        db.execute(
-            "INSERT INTO users(username, password_hash, role) VALUES(?,?,?)",
-            ("admin", generate_password_hash(ADMIN_PASSWORD), "admin"),
-        )
+    db.execute(
+        "INSERT INTO users(username, password_hash, role) VALUES(%s,%s,%s) "
+        "ON CONFLICT (username) DO NOTHING",
+        ("admin", generate_password_hash(required_env("ADMIN_PASSWORD")), "admin"),
+    )
     db.commit()
+
+
+@app.cli.command("init-admin")
+def init_admin_command():
+    """Идемпотентно создать admin в заранее подготовленной базе."""
+    init_db()
+    click.echo("Начальный администратор подготовлен; существующий пароль сохранён.")
 
 
 def esc(value):
@@ -97,11 +78,23 @@ def esc(value):
     return html.escape("" if value is None else str(value))
 
 
+def form_int(name, default=None):
+    try:
+        return int(request.form.get(name) or default)
+    except (ValueError, TypeError):
+        raise BadRequest(f"Поле {name} должно быть числом") from None
+
+
+def json_data():
+    data = request.get_json(force=True, silent=True)
+    return data if isinstance(data, dict) else {}
+
+
 def current_user():
     uid = session.get("user_id")
     if not uid:
         return None
-    return get_db().execute("SELECT id, username, role FROM users WHERE id=?", (uid,)).fetchone()
+    return get_db().execute("SELECT id, username, role FROM users WHERE id=%s", (uid,)).fetchone()
 
 
 def login_required(view):
@@ -123,8 +116,11 @@ def health():
         db = get_db()
         db.execute("SELECT 1").fetchone()
         return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"status": "fail", "error": str(e)}), 500
+    except psycopg.Error as exc:
+        # Причина доступна администратору в journal, пароль из неё удаляется.
+        detail = str(exc).replace(DB_CONFIG["password"], "[redacted]")
+        app.logger.error("Проверка БД не пройдена (%s): %s", type(exc).__name__, detail)
+        return jsonify({"status": "fail"}), 500
 
 
 @app.get("/version")
@@ -215,9 +211,9 @@ def index():
            JOIN disciplines d ON d.id=gr.discipline_id ORDER BY gr.id DESC LIMIT 50"""
     ).fetchall()
     avg = db.execute(
-        """SELECT s.fio, ROUND(AVG(gr.value),2) as avg_score, COUNT(gr.id) as cnt
+        """SELECT s.fio, ROUND(AVG(gr.value),2)::double precision as avg_score, COUNT(gr.id) as cnt
            FROM students s LEFT JOIN grades gr ON gr.student_id=s.id
-           GROUP BY s.id ORDER BY avg_score DESC"""
+           GROUP BY s.id ORDER BY avg_score DESC NULLS LAST"""
     ).fetchall()
 
     user = current_user()
@@ -317,13 +313,15 @@ def register_post():
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO users(username, password_hash) VALUES(?,?)",
+            "INSERT INTO users(username, password_hash) VALUES(%s,%s) RETURNING id",
             (username, generate_password_hash(password)),
         )
+        new_id = cur.fetchone()["id"]
         db.commit()
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
+        db.rollback()
         return auth_form("Регистрация", "/register", "Такой логин уже занят"), 400
-    session["user_id"] = cur.lastrowid
+    session["user_id"] = new_id
     return redirect(url_for("index"))
 
 
@@ -338,7 +336,7 @@ def login_page():
 def login_post():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    row = get_db().execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    row = get_db().execute("SELECT * FROM users WHERE username=%s", (username,)).fetchone()
     if not row or not check_password_hash(row["password_hash"], password):
         return auth_form("Вход", "/login", "Неверный логин или пароль"), 401
     session["user_id"] = row["id"]
@@ -355,33 +353,32 @@ def logout():
 @app.post("/web/groups")
 @login_required
 def web_add_group():
-    return _web_create("INSERT INTO groups(name,year) VALUES(?,?)",
-                       (request.form["name"], int(request.form["year"])))
+    return _web_create("INSERT INTO groups(name,year) VALUES(%s,%s)",
+                       (request.form["name"], form_int("year")))
 
 
 @app.post("/web/students")
 @login_required
 def web_add_student():
     return _web_create(
-        "INSERT INTO students(fio,group_id,student_no) VALUES(?,?,?)",
-        (request.form["fio"], int(request.form["group_id"]), request.form["student_no"]),
+        "INSERT INTO students(fio,group_id,student_no) VALUES(%s,%s,%s)",
+        (request.form["fio"], form_int("group_id"), request.form["student_no"]),
     )
 
 
 @app.post("/web/disciplines")
 @login_required
 def web_add_disc():
-    return _web_create("INSERT INTO disciplines(name,credits) VALUES(?,?)",
-                       (request.form["name"], int(request.form.get("credits") or 3)))
+    return _web_create("INSERT INTO disciplines(name,credits) VALUES(%s,%s)",
+                       (request.form["name"], form_int("credits", 3)))
 
 
 @app.post("/web/plans")
 @login_required
 def web_add_plan():
     return _web_create(
-        "INSERT INTO study_plans(group_id,discipline_id,semester) VALUES(?,?,?)",
-        (int(request.form["group_id"]), int(request.form["discipline_id"]),
-         int(request.form["semester"])),
+        "INSERT INTO study_plans(group_id,discipline_id,semester) VALUES(%s,%s,%s)",
+        (form_int("group_id"), form_int("discipline_id"), form_int("semester")),
     )
 
 
@@ -389,15 +386,15 @@ def web_add_plan():
 @login_required
 def web_add_grade():
     err = check_business_rule(
-        int(request.form["student_id"]), int(request.form["discipline_id"]),
-        int(request.form["semester"]), int(request.form["value"]),
+        form_int("student_id"), form_int("discipline_id"),
+        form_int("semester"), form_int("value"),
     )
     if err:
         return page("Ошибка", f"<div class='error'>{esc(err)}</div><a class='btn' href='/'>Назад</a>"), 400
     return _web_create(
-        "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(?,?,?,?)",
-        (int(request.form["student_id"]), int(request.form["discipline_id"]),
-         int(request.form["semester"]), int(request.form["value"])),
+        "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(%s,%s,%s,%s)",
+        (form_int("student_id"), form_int("discipline_id"),
+         form_int("semester"), form_int("value")),
     )
 
 
@@ -406,9 +403,10 @@ def _web_create(sql, params):
     try:
         db.execute(sql, params)
         db.commit()
-    except sqlite3.IntegrityError as e:
+    except psycopg.IntegrityError:
+        db.rollback()
         return page("Ошибка",
-                    f"<div class='error'>Такая запись уже есть ({esc(e)})</div>"
+                    "<div class='error'>Запись уже существует или нарушает связи данных</div>"
                     "<a class='btn' href='/'>Назад</a>"), 400
     return redirect(url_for("index"))
 
@@ -419,11 +417,11 @@ def check_business_rule(student_id, discipline_id, semester, value):
     if value not in (2, 3, 4, 5):
         return "Оценка должна быть от 2 до 5"
     db = get_db()
-    st = db.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    st = db.execute("SELECT * FROM students WHERE id=%s", (student_id,)).fetchone()
     if not st:
         return "Такого студента нет"
     plan = db.execute(
-        "SELECT * FROM study_plans WHERE group_id=? AND discipline_id=? AND semester=?",
+        "SELECT * FROM study_plans WHERE group_id=%s AND discipline_id=%s AND semester=%s",
         (st["group_id"], discipline_id, semester),
     ).fetchone()
     if not plan:
@@ -462,16 +460,18 @@ def api_groups():
 
 @app.post("/api/groups")
 def api_add_group():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     if not data.get("name") or "year" not in data:
         return jsonify({"error": "Нужно name и year"}), 400
     try:
         db = get_db()
-        cur = db.execute("INSERT INTO groups(name,year) VALUES(?,?)",
+        cur = db.execute("INSERT INTO groups(name,year) VALUES(%s,%s) RETURNING id",
                          (data["name"], int(data["year"])))
+        new_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"id": cur.lastrowid}), 201
-    except sqlite3.IntegrityError:
+        return jsonify({"id": new_id}), 201
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такая группа уже есть"}), 400
     except (ValueError, TypeError):
         return jsonify({"error": "year должен быть числом"}), 400
@@ -484,20 +484,24 @@ def api_students():
 
 @app.post("/api/students")
 def api_add_student():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     if not data.get("fio") or not data.get("group_id") or not data.get("student_no"):
         return jsonify({"error": "Нужно fio, group_id, student_no"}), 400
     try:
         db = get_db()
-        if not db.execute("SELECT 1 FROM groups WHERE id=?",
+        if not db.execute("SELECT 1 FROM groups WHERE id=%s",
                           (int(data["group_id"]),)).fetchone():
             return jsonify({"error": "Такой группы нет"}), 400
-        cur = db.execute("INSERT INTO students(fio,group_id,student_no) VALUES(?,?,?)",
+        cur = db.execute("INSERT INTO students(fio,group_id,student_no) VALUES(%s,%s,%s) RETURNING id",
                          (data["fio"], int(data["group_id"]), data["student_no"]))
+        new_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"id": cur.lastrowid}), 201
-    except sqlite3.IntegrityError:
+        return jsonify({"id": new_id}), 201
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такой номер зачётки уже есть"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "group_id должен быть числом"}), 400
 
 
 @app.get("/api/disciplines")
@@ -507,17 +511,21 @@ def api_discs():
 
 @app.post("/api/disciplines")
 def api_add_disc():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     if not data.get("name"):
         return jsonify({"error": "Нужно name"}), 400
     try:
         db = get_db()
-        cur = db.execute("INSERT INTO disciplines(name,credits) VALUES(?,?)",
+        cur = db.execute("INSERT INTO disciplines(name,credits) VALUES(%s,%s) RETURNING id",
                          (data["name"], int(data.get("credits", 3))))
+        new_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"id": cur.lastrowid}), 201
-    except sqlite3.IntegrityError:
+        return jsonify({"id": new_id}), 201
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такая дисциплина уже есть"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "credits должен быть числом"}), 400
 
 
 @app.get("/api/plans")
@@ -527,7 +535,7 @@ def api_plans():
 
 @app.post("/api/plans")
 def api_add_plan():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     try:
         gid, did, sem = int(data["group_id"]), int(data["discipline_id"]), int(data["semester"])
     except (KeyError, ValueError, TypeError):
@@ -535,11 +543,13 @@ def api_add_plan():
     try:
         db = get_db()
         cur = db.execute(
-            "INSERT INTO study_plans(group_id,discipline_id,semester) VALUES(?,?,?)",
+            "INSERT INTO study_plans(group_id,discipline_id,semester) VALUES(%s,%s,%s) RETURNING id",
             (gid, did, sem))
+        new_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"id": cur.lastrowid}), 201
-    except sqlite3.IntegrityError:
+        return jsonify({"id": new_id}), 201
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такой план уже есть или нет группы/дисциплины"}), 400
 
 
@@ -550,7 +560,7 @@ def api_grades():
 
 @app.post("/api/grades")
 def api_add_grade():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     try:
         sid, did, sem, val = (int(data["student_id"]), int(data["discipline_id"]),
                               int(data["semester"]), int(data["value"]))
@@ -562,20 +572,22 @@ def api_add_grade():
     try:
         db = get_db()
         cur = db.execute(
-            "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(?,?,?,?)",
+            "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(%s,%s,%s,%s) RETURNING id",
             (sid, did, sem, val))
+        new_id = cur.fetchone()["id"]
         db.commit()
-        return jsonify({"id": cur.lastrowid}), 201
-    except sqlite3.IntegrityError:
+        return jsonify({"id": new_id}), 201
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такая оценка уже стоит"}), 400
 
 
 @app.get("/api/report/avg")
 def api_avg():
     rows = get_db().execute(
-        """SELECT s.id, s.fio, ROUND(AVG(g.value),2) as avg_score, COUNT(g.id) as cnt
+        """SELECT s.id, s.fio, ROUND(AVG(g.value),2)::double precision as avg_score, COUNT(g.id) as cnt
            FROM students s LEFT JOIN grades g ON g.student_id=s.id
-           GROUP BY s.id ORDER BY avg_score DESC"""
+           GROUP BY s.id ORDER BY avg_score DESC NULLS LAST"""
     ).fetchall()
     return jsonify([dict(r) for r in rows])
 
@@ -583,28 +595,30 @@ def api_avg():
 # --- Аутентификация через API ---
 @app.post("/api/register")
 def api_register():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     username, password = (data.get("username") or "").strip(), data.get("password") or ""
     if len(username) < 3 or len(password) < 4:
         return jsonify({"error": "Логин — от 3 символов, пароль — от 4"}), 400
     try:
         db = get_db()
         cur = db.execute(
-            "INSERT INTO users(username, password_hash) VALUES(?,?)",
+            "INSERT INTO users(username, password_hash) VALUES(%s,%s) RETURNING id",
             (username, generate_password_hash(password)),
         )
+        new_id = cur.fetchone()["id"]
         db.commit()
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
+        db.rollback()
         return jsonify({"error": "Такой логин уже занят"}), 400
-    session["user_id"] = cur.lastrowid
-    return jsonify({"id": cur.lastrowid, "username": username}), 201
+    session["user_id"] = new_id
+    return jsonify({"id": new_id, "username": username}), 201
 
 
 @app.post("/api/login")
 def api_login():
-    data = request.get_json(force=True, silent=True) or {}
+    data = json_data()
     username, password = (data.get("username") or "").strip(), data.get("password") or ""
-    row = get_db().execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    row = get_db().execute("SELECT * FROM users WHERE username=%s", (username,)).fetchone()
     if not row or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "Неверный логин или пароль"}), 401
     session["user_id"] = row["id"]

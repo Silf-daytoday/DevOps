@@ -1,11 +1,15 @@
+PYTHON ?= python
+
+.PHONY: setup run test verify
+
 setup:
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 
 run:
-	python app.py
+	$(PYTHON) app.py
 
 test:
-	python check.py
+	$(PYTHON) check.py
 
 verify: test
-	python -c "import ast; ast.parse(open('app.py', encoding='utf-8').read()); print('syntax OK')"
+	$(PYTHON) -c "import ast; from pathlib import Path; [ast.parse(Path(p).read_text(encoding='utf-8')) for p in ('app.py', 'check.py')]; print('syntax OK')"
