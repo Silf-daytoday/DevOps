@@ -6,7 +6,7 @@
 | Метод | Адрес | Что делает | Пример |
 |---|---|---|---|
 | GET | `/health` | SELECT 1 к БД: 200 при успехе, 500 при ошибке | `{"status":"ok"}` или `{"status":"fail"}` |
-| GET | `/version` | Версия из APP_VERSION | `{"version":"0.2.0-dev"}` |
+| GET | `/version` | Версия из APP_VERSION | `{"version":"0.2.0"}` |
 | GET | `/` | Веб-интерфейс (формы) | страница HTML |
 | GET/POST | `/api/groups` | Список / создать `{name, year}` | `{"id":1}` |
 | GET/POST | `/api/students` | Список / создать `{fio, group_id, student_no}` | `{"id":1}` |

@@ -35,7 +35,7 @@ DB_CONFIG = {
     "row_factory": dict_row,
 }
 PORT = int(os.environ.get("PORT", "5000"))
-APP_VERSION = os.environ.get("APP_VERSION", "0.2.0-dev")
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.0")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 app = Flask(__name__)
