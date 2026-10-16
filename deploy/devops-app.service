@@ -1,0 +1,30 @@
+[Unit]
+Description=Student performance application (DevOps LR2)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=devopsapp
+Group=devopsapp
+WorkingDirectory=/opt/devops/app
+EnvironmentFile=/etc/devops/app.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStartPre=/opt/devops/venv/bin/flask --app app init-admin
+ExecStart=/opt/devops/venv/bin/gunicorn --workers 2 --bind ${APP_HOST}:${PORT} --access-logfile - --error-logfile - --capture-output app:app
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
