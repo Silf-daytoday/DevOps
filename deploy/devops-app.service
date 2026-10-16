@@ -13,7 +13,7 @@ EnvironmentFile=/etc/devops/app.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStartPre=/opt/devops/venv/bin/flask --app app init-admin
-ExecStart=/opt/devops/venv/bin/gunicorn --workers 2 --bind ${APP_HOST}:${PORT} --access-logfile - --error-logfile - --capture-output app:app
+ExecStart=/opt/devops/venv/bin/gunicorn --workers 2 --no-control-socket --bind ${APP_HOST}:${PORT} --access-logfile - --error-logfile - --capture-output app:app
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30s

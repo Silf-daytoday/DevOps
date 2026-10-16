@@ -227,6 +227,11 @@ ADMIN_PASSWORD=CHANGE_ME_INITIAL_ADMIN_PASSWORD
 APP_HOST — реальный Host-only IPv4 app-server; Gunicorn получает адрес через
 EnvironmentFile, без зашитого адреса в unit.
 
+APP_HOST обязательно задается отдельной строкой в app.env. Если переменная
+отсутствует, systemd подставит пустую строку и Gunicorn может слушать все интерфейсы.
+В unit указан --no-control-socket: управление службой выполняется через systemctl,
+а дополнительный управляющий Unix-сокет Gunicorn не создается в home пользователя.
+
 Замените все CHANGE_ME-значения: DB_PASSWORD — уже заданный пароль devops_app,
 SECRET_KEY — случайная длинная строка, ADMIN_PASSWORD — новый пароль веб-admin.
 Для генерации секрета можно выполнить `python3 -c 'import secrets; print(secrets.token_hex(32))'`
