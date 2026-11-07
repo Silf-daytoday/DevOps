@@ -1,4 +1,5 @@
 """Проверки приложения, только на отдельной PostgreSQL-базе devops_test."""
+
 import os
 import secrets
 
@@ -9,15 +10,19 @@ if os.environ.get("DB_NAME") != "devops_test" or os.environ.get("DB_USER") != "d
 os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
 os.environ.setdefault("ADMIN_PASSWORD", secrets.token_urlsafe(24))
 
-from app import app, init_db, get_db  # noqa: E402
+from app import app, get_db, init_db  # noqa: E402
 
 app.config["TESTING"] = True
 with app.app_context():
     db = get_db()
     identity = db.execute("SELECT current_database() AS db, current_user AS role").fetchone()
     if identity != {"db": "devops_test", "role": "devops_test"}:
-        raise SystemExit("ОТКАЗ: фактические база/пользователь не соответствуют тестовому окружению")
-    db.execute("TRUNCATE groups, students, disciplines, study_plans, grades, users RESTART IDENTITY")
+        raise SystemExit(
+            "ОТКАЗ: фактические база/пользователь не соответствуют тестовому окружению"
+        )
+    db.execute(
+        "TRUNCATE groups, students, disciplines, study_plans, grades, users RESTART IDENTITY"
+    )
     db.commit()
     init_db()
 c = app.test_client()
@@ -59,21 +64,26 @@ check("POST /api/disciplines", d.status_code == 201)
 did = d.get_json()["id"]
 
 # Ошибка: оценка без учебного плана должна отклониться (бизнес-правило!)
-bad = c.post("/api/grades",
-             json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 5})
-check("Бизнес-правило: оценка без плана отклонена",
-      bad.status_code == 400 and "учебн" in bad.get_json()["error"].lower())
+bad = c.post(
+    "/api/grades", json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 5}
+)
+check(
+    "Бизнес-правило: оценка без плана отклонена",
+    bad.status_code == 400 and "учебн" in bad.get_json()["error"].lower(),
+)
 
 p = c.post("/api/plans", json={"group_id": gid, "discipline_id": did, "semester": 5})
 check("POST /api/plans", p.status_code == 201)
 
-good = c.post("/api/grades",
-              json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 5})
+good = c.post(
+    "/api/grades", json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 5}
+)
 check("Оценка с планом принята", good.status_code == 201)
 
 # Ошибка: оценка 10 невозможна
-bad2 = c.post("/api/grades",
-              json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 10})
+bad2 = c.post(
+    "/api/grades", json={"student_id": sid, "discipline_id": did, "semester": 5, "value": 10}
+)
 check("Оценка 10 отклонена", bad2.status_code == 400)
 
 # Ошибка: мусор вместо чисел
@@ -111,7 +121,10 @@ check("GET /api/me после входа", me.status_code == 200 and me.get_json
 anon = app.test_client()
 anon.get("/")  # отдельная сессия без входа
 r = anon.post("/web/groups", data={"name": "X-1", "year": "2026"})
-check("Веб-форма без входа ведёт на /login", r.status_code == 302 and "/login" in r.headers["Location"])
+check(
+    "Веб-форма без входа ведёт на /login",
+    r.status_code == 302 and "/login" in r.headers["Location"],
+)
 
 # Со входом веб-форма работает
 r = c.post("/web/groups", data={"name": "ИМ-32", "year": "2026"})
@@ -131,14 +144,22 @@ for path, payload in (
 ):
     check(f"Некорректный ввод {path} -> 400", c.post(path, json=payload).status_code == 400)
 
-student_without_grades = c.post("/api/students", json={
-    "fio": "Без оценок", "group_id": gid, "student_no": "Z-002",
-})
+student_without_grades = c.post(
+    "/api/students",
+    json={
+        "fio": "Без оценок",
+        "group_id": gid,
+        "student_no": "Z-002",
+    },
+)
 check("Студент без оценок создан", student_without_grades.status_code == 201)
 report = c.get("/api/report/avg").get_json()
-check("Средний балл — число, без оценок — NULL в конце",
-      report[0]["id"] == sid and isinstance(report[0]["avg_score"], (int, float))
-      and report[-1]["avg_score"] is None)
+check(
+    "Средний балл — число, без оценок — NULL в конце",
+    report[0]["id"] == sid
+    and isinstance(report[0]["avg_score"], (int, float))
+    and report[-1]["avg_score"] is None,
+)
 
 r = c.post("/api/logout")
 check("POST /api/logout", r.status_code == 200)
