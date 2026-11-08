@@ -9,7 +9,7 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-for file in app.py requirements.txt .env.example deploy/devops-app.service; do
+for file in app.py domain.py requirements.txt .env.example deploy/devops-app.service; do
     [[ -f "$source_dir/$file" ]] || { echo "Нет файла $file" >&2; exit 1; }
 done
 command -v python3 >/dev/null
@@ -25,6 +25,7 @@ fi
 
 install -d -o root -g root -m 0755 /opt/devops /opt/devops/app
 install -o root -g root -m 0644 "$source_dir/app.py" /opt/devops/app/app.py
+install -o root -g root -m 0644 "$source_dir/domain.py" /opt/devops/app/domain.py
 install -o root -g root -m 0644 "$source_dir/requirements.txt" /opt/devops/app/requirements.txt
 python3 -m venv /opt/devops/venv
 /opt/devops/venv/bin/python -m pip install -r /opt/devops/app/requirements.txt

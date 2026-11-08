@@ -1,0 +1,17 @@
+-r requirements.txt
+alembic==1.20.1
+bandit==1.9.4
+coverage==7.17.2
+iniconfig==2.3.1
+mako==1.4.3
+markdown-it-py==4.2.0
+mdurl==0.1.2
+pluggy==1.7.0
+pygments==2.21.0
+pytest==9.2.0
+pytest-cov==7.1.0
+pyyaml==6.0.3
+rich==15.0.0
+ruff==0.17.4
+sqlalchemy==2.1.8
+stevedore==5.9.1
