@@ -90,7 +90,7 @@ export DB_HOST=192.0.2.20
 export DB_PORT=5432
 export DB_NAME=devops_test
 export DB_USER=devops_test
-export APP_VERSION=0.3.0-dev
+export APP_VERSION=0.3.0
 read -rsp 'Пароль devops_test: ' DB_PASSWORD
 printf '\n'
 export DB_PASSWORD
@@ -188,7 +188,7 @@ sudo bash deploy/install-app.sh
 sudo nano /etc/devops/app.env
 ```
 
-Измените APP_VERSION на 0.3.0-dev. Остальные рабочие значения сохраните.
+Измените APP_VERSION на 0.3.0. Остальные рабочие значения сохраните.
 Установщик копирует app.py и domain.py, использует закреплённые runtime-зависимости,
 сохраняет существующий app.env. Служба и владелец devopsapp остаются теми же.
 
@@ -265,7 +265,7 @@ PR: feature → develop. В описание добавьте номер Issue �
 в коде/шаблоне/документации и установленном env, повторный verify,
 PR release → main и release → develop. Create a merge commit сохраняет историю.
 Тег v0.3.0 ставится на принятый main; старые теги сохраняются.
-Release-ветка и финальный тег заранее не созданы.
+Release-ветка готовится после приёмки, финальный тег — после слияния в main.
 
 ## 10. Анализаторы и проверочные ограничения
 

@@ -2,8 +2,10 @@
 
 Задача поставлена пользователем 07.11.2026 на основе принятой ЛР2 v0.2.0.
 Ветка: feature/lr3-verification-migrations-backup, база — develop 3f70b0f.
-Создание Issue через интеграцию вернуло HTTP 403. Карточку нужно создать
-из учётной записи владельца и связать с PR; её наличие пока не подтверждено.
+Карточка задачи: [#5](https://github.com/Silf-daytoday/DevOps/issues/5),
+создана владельцем через GitHub после отказа интеграции 403.
+Feature-ветка принята [PR #6](https://github.com/Silf-daytoday/DevOps/pull/6)
+и слита в develop 08.11.2026, merge-коммит 6b4bbb0.
 
 - Единый setup и закреплённые зависимости.
 - Unit- и PostgreSQL/API/web-тесты, ошибки и границы.

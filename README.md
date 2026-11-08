@@ -1,7 +1,7 @@
 # Учёт успеваемости студентов — вариант 8
 
-Flask + PostgreSQL 16, веб-интерфейс и HTTP API. Версия разработки ЛР3 —
-`0.3.0-dev`. Две Ubuntu Server без GUI, приложение через systemd от
+Flask + PostgreSQL 16, веб-интерфейс и HTTP API. Версия приложения ЛР3 —
+`0.3.0`. Две Ubuntu Server без GUI, приложение через systemd от
 `devopsapp`. Windows — SSH-клиент и браузер.
 
 ЛР1 и ЛР2 сохранены в тегах `v0.1.0` и `v0.2.0`.
