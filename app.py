@@ -1,10 +1,11 @@
-"""Учёт успеваемости студентов. Вариант 8. ЛР2.
+"""Учёт успеваемости студентов. Вариант 8. ЛР3.
 Сущности: groups -> students, disciplines, study_plans, grades, users.
 Бизнес-правило: оценка выставляется только если дисциплина
 включена в учебный план группы студента на указанный семестр (оценка 2–5).
 Аутентификация: регистрация и вход по логину/паролю (пароли хранятся
 только в виде хеша). Изменение данных через веб-формы требует входа.
 """
+
 import html
 import logging
 import os
@@ -12,10 +13,13 @@ from functools import wraps
 
 import click
 import psycopg
+from flask import Flask, g, jsonify, redirect, request, session, url_for
 from psycopg.rows import dict_row
-from flask import Flask, request, jsonify, g, redirect, url_for, session
-from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import BadRequest
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from domain import as_integer, grade_context_error, grade_value_error, normalize_comment
+
 
 # --- Конфигурация через переменные окружения ---
 def required_env(name):
@@ -35,7 +39,7 @@ DB_CONFIG = {
     "row_factory": dict_row,
 }
 PORT = int(os.environ.get("PORT", "5000"))
-APP_VERSION = os.environ.get("APP_VERSION", "0.2.0")
+APP_VERSION = os.environ.get("APP_VERSION", "0.3.0-dev")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 app = Flask(__name__)
@@ -80,7 +84,7 @@ def esc(value):
 
 def form_int(name, default=None):
     try:
-        return int(request.form.get(name) or default)
+        return as_integer(request.form.get(name) or default)
     except (ValueError, TypeError):
         raise BadRequest(f"Поле {name} должно быть числом") from None
 
@@ -99,6 +103,7 @@ def current_user():
 
 def login_required(view):
     """Изменение данных доступно только вошедшим пользователям."""
+
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not current_user():
@@ -106,6 +111,7 @@ def login_required(view):
                 return jsonify({"error": "Требуется вход"}), 401
             return redirect(url_for("login_page", next=request.path))
         return view(*args, **kwargs)
+
     return wrapped
 
 
@@ -188,8 +194,11 @@ def page(title, body):
         auth = f"{esc(user['username'])} ({esc(user['role'])}) · <a href='/logout'>Выйти</a>"
     else:
         auth = "<a href='/login'>Войти</a> · <a href='/register'>Регистрация</a>"
-    return (BASE_TOP.format(title=esc(title), css=CSS, auth=auth)
-            + body + "</div><div class='footer'>ЛР1 · Вариант 8 · Учёт успеваемости студентов</div></body></html>")
+    return (
+        BASE_TOP.format(title=esc(title), css=CSS, auth=auth)
+        + body
+        + "</div><div class='footer'>ЛР1 · Вариант 8 · Учёт успеваемости студентов</div></body></html>"
+    )
 
 
 def grade_badge(value):
@@ -206,7 +215,7 @@ def index():
     ).fetchall()
     disciplines = db.execute("SELECT * FROM disciplines ORDER BY name").fetchall()
     grades = db.execute(
-        """SELECT gr.value, gr.semester, s.fio, d.name as disc
+        """SELECT gr.value, gr.semester, gr.comment, gr.created_at, s.fio, d.name as disc
            FROM grades gr JOIN students s ON s.id=gr.student_id
            JOIN disciplines d ON d.id=gr.discipline_id ORDER BY gr.id DESC LIMIT 50"""
     ).fetchall()
@@ -219,26 +228,43 @@ def index():
     user = current_user()
     notice = ""
     if not user:
-        notice = ("<div class='notice'>Вы не вошли в систему: просмотр открыт для всех, "
-                  "а добавление данных требует входа. <a href='/login'>Войти</a> · "
-                  "демо-логин <b>admin</b>.</div>")
+        notice = (
+            "<div class='notice'>Вы не вошли в систему: просмотр открыт для всех, "
+            "а добавление данных требует входа. <a href='/login'>Войти</a> · "
+            "демо-логин <b>admin</b>.</div>"
+        )
 
-    rows_avg = "".join(
-        "<tr><td>{fio}</td><td>{score}</td>"
-        "<td><div class='bar'><i style='width:{w}%'></i></div></td>"
-        "<td>{cnt}</td></tr>".format(
-            fio=esc(r["fio"]),
-            score=r["avg_score"] or "—",
-            w=int((r["avg_score"] or 0) / 5 * 100),
-            cnt=r["cnt"],
-        ) for r in avg
-    ) or "<tr><td colspan=4>Пока нет студентов</td></tr>"
-    rows_gr = "".join(
-        "<tr><td>{fio}</td><td>{d}</td><td>Семестр {s}</td><td>{b}</td></tr>".format(
-            fio=esc(r["fio"]), d=esc(r["disc"]), s=r["semester"],
-            b=grade_badge(r["value"]),
-        ) for r in grades
-    ) or "<tr><td colspan=4>Оценок пока нет</td></tr>"
+    rows_avg = (
+        "".join(
+            "<tr><td>{fio}</td><td>{score}</td>"
+            "<td><div class='bar'><i style='width:{w}%'></i></div></td>"
+            "<td>{cnt}</td></tr>".format(
+                fio=esc(r["fio"]),
+                score=r["avg_score"] or "—",
+                w=int((r["avg_score"] or 0) / 5 * 100),
+                cnt=r["cnt"],
+            )
+            for r in avg
+        )
+        or "<tr><td colspan=4>Пока нет студентов</td></tr>"
+    )
+    rows_gr = (
+        "".join(
+            "<tr><td>{fio}</td><td>{d}</td><td>Семестр {s}</td><td>{b}</td>"
+            "<td>{comment}</td><td>{created}</td></tr>".format(
+                fio=esc(r["fio"]),
+                d=esc(r["disc"]),
+                s=r["semester"],
+                b=grade_badge(r["value"]),
+                comment=esc(r["comment"] or "—"),
+                created=esc(
+                    r["created_at"].isoformat(timespec="seconds") if r["created_at"] else "—"
+                ),
+            )
+            for r in grades
+        )
+        or "<tr><td colspan=6>Оценок пока нет</td></tr>"
+    )
     opt_g = "".join(f"<option value='{r['id']}'>{esc(r['name'])}</option>" for r in groups)
     opt_s = "".join(f"<option value='{r['id']}'>{esc(r['fio'])}</option>" for r in students)
     opt_d = "".join(f"<option value='{r['id']}'>{esc(r['name'])}</option>" for r in disciplines)
@@ -276,10 +302,11 @@ def index():
 <label>Дисциплина</label><select name='discipline_id'>{opt_d}</select>
 <label>Семестр</label><input name='semester' placeholder='5' required>
 <label>Оценка (2–5)</label><input name='value' placeholder='5' required>
+<label>Комментарий (до 500 символов)</label><input name='comment' maxlength='500'>
 <button class='btn'>Оценить</button></form></div>
 </div>
 <div class='section-title'>Последние оценки</div>
-<table><tr><th>Студент</th><th>Дисциплина</th><th>Семестр</th><th>Оценка</th></tr>{rows_gr}</table>
+<table><tr><th>Студент</th><th>Дисциплина</th><th>Семестр</th><th>Оценка</th><th>Комментарий</th><th>Время записи</th></tr>{rows_gr}</table>
 <div class='section-title'>Средний балл</div>
 <table><tr><th>Студент</th><th>Балл</th><th>Прогресс</th><th>Оценок</th></tr>{rows_avg}</table>
 """
@@ -289,12 +316,15 @@ def index():
 # --- Регистрация / вход / выход (веб) ---
 def auth_form(title, action, error=""):
     err = f"<div class='error'>{esc(error)}</div>" if error else ""
-    return page(title, f"""<div class='auth-box'><h1>{esc(title)}</h1>{err}
+    return page(
+        title,
+        f"""<div class='auth-box'><h1>{esc(title)}</h1>{err}
 <form method='post' action='{action}'>
 <div class='card' style='box-shadow:none;padding:0'>
 <label>Логин</label><input name='username' required minlength='3'>
 <label>Пароль</label><input name='password' type='password' required minlength='4'>
-<button class='btn'>Продолжить</button></div></form></div>""")
+<button class='btn'>Продолжить</button></div></form></div>""",
+    )
 
 
 @app.get("/register")
@@ -353,8 +383,9 @@ def logout():
 @app.post("/web/groups")
 @login_required
 def web_add_group():
-    return _web_create("INSERT INTO groups(name,year) VALUES(%s,%s)",
-                       (request.form["name"], form_int("year")))
+    return _web_create(
+        "INSERT INTO groups(name,year) VALUES(%s,%s)", (request.form["name"], form_int("year"))
+    )
 
 
 @app.post("/web/students")
@@ -369,8 +400,10 @@ def web_add_student():
 @app.post("/web/disciplines")
 @login_required
 def web_add_disc():
-    return _web_create("INSERT INTO disciplines(name,credits) VALUES(%s,%s)",
-                       (request.form["name"], form_int("credits", 3)))
+    return _web_create(
+        "INSERT INTO disciplines(name,credits) VALUES(%s,%s)",
+        (request.form["name"], form_int("credits", 3)),
+    )
 
 
 @app.post("/web/plans")
@@ -386,15 +419,28 @@ def web_add_plan():
 @login_required
 def web_add_grade():
     err = check_business_rule(
-        form_int("student_id"), form_int("discipline_id"),
-        form_int("semester"), form_int("value"),
+        form_int("student_id"),
+        form_int("discipline_id"),
+        form_int("semester"),
+        form_int("value"),
     )
     if err:
-        return page("Ошибка", f"<div class='error'>{esc(err)}</div><a class='btn' href='/'>Назад</a>"), 400
+        return page(
+            "Ошибка", f"<div class='error'>{esc(err)}</div><a class='btn' href='/'>Назад</a>"
+        ), 400
+    try:
+        comment = normalize_comment(request.form.get("comment"))
+    except ValueError as exc:
+        return page("Ошибка", f"<div class='error'>{esc(exc)}</div>"), 400
     return _web_create(
-        "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(%s,%s,%s,%s)",
-        (form_int("student_id"), form_int("discipline_id"),
-         form_int("semester"), form_int("value")),
+        "INSERT INTO grades(student_id,discipline_id,semester,value,comment) VALUES(%s,%s,%s,%s,%s)",
+        (
+            form_int("student_id"),
+            form_int("discipline_id"),
+            form_int("semester"),
+            form_int("value"),
+            comment,
+        ),
     )
 
 
@@ -405,48 +451,50 @@ def _web_create(sql, params):
         db.commit()
     except psycopg.IntegrityError:
         db.rollback()
-        return page("Ошибка",
-                    "<div class='error'>Запись уже существует или нарушает связи данных</div>"
-                    "<a class='btn' href='/'>Назад</a>"), 400
+        return page(
+            "Ошибка",
+            "<div class='error'>Запись уже существует или нарушает связи данных</div>"
+            "<a class='btn' href='/'>Назад</a>",
+        ), 400
     return redirect(url_for("index"))
 
 
 # --- Бизнес-правило ---
 def check_business_rule(student_id, discipline_id, semester, value):
     """Возвращает текст ошибки или None если всё ок."""
-    if value not in (2, 3, 4, 5):
-        return "Оценка должна быть от 2 до 5"
+    err = grade_value_error(value)
+    if err:
+        return err
     db = get_db()
     st = db.execute("SELECT * FROM students WHERE id=%s", (student_id,)).fetchone()
     if not st:
-        return "Такого студента нет"
+        return grade_context_error(False, False)
     plan = db.execute(
         "SELECT * FROM study_plans WHERE group_id=%s AND discipline_id=%s AND semester=%s",
         (st["group_id"], discipline_id, semester),
     ).fetchone()
-    if not plan:
-        return ("Нельзя ставить оценку: этой дисциплины НЕТ в учебном плане "
-                "группы студента на этот семестр")
-    return None
+    return grade_context_error(True, bool(plan))
 
 
 # --- HTTP API (JSON) ---
 @app.get("/api/docs")
 def api_docs():
-    return jsonify({
-        "GET /health": "проверка работоспособности",
-        "GET /version": "версия приложения",
-        "GET/POST /api/groups": "список/создание групп",
-        "GET/POST /api/students": "список/создание студентов",
-        "GET/POST /api/disciplines": "список/создание дисциплин",
-        "GET/POST /api/plans": "учебные планы",
-        "GET/POST /api/grades": "оценки (с проверкой бизнес-правила)",
-        "GET /api/report/avg": "средний балл по студентам",
-        "POST /api/register": "регистрация {username, password}",
-        "POST /api/login": "вход {username, password}",
-        "POST /api/logout": "выход",
-        "GET /api/me": "текущий пользователь",
-    })
+    return jsonify(
+        {
+            "GET /health": "проверка работоспособности",
+            "GET /version": "версия приложения",
+            "GET/POST /api/groups": "список/создание групп",
+            "GET/POST /api/students": "список/создание студентов",
+            "GET/POST /api/disciplines": "список/создание дисциплин",
+            "GET/POST /api/plans": "учебные планы",
+            "GET/POST /api/grades": "оценки, комментарий до 500 символов, время записи",
+            "GET /api/report/avg": "средний балл по студентам",
+            "POST /api/register": "регистрация {username, password}",
+            "POST /api/login": "вход {username, password}",
+            "POST /api/logout": "выход",
+            "GET /api/me": "текущий пользователь",
+        }
+    )
 
 
 def _list(sql):
@@ -465,8 +513,10 @@ def api_add_group():
         return jsonify({"error": "Нужно name и year"}), 400
     try:
         db = get_db()
-        cur = db.execute("INSERT INTO groups(name,year) VALUES(%s,%s) RETURNING id",
-                         (data["name"], int(data["year"])))
+        cur = db.execute(
+            "INSERT INTO groups(name,year) VALUES(%s,%s) RETURNING id",
+            (data["name"], as_integer(data["year"])),
+        )
         new_id = cur.fetchone()["id"]
         db.commit()
         return jsonify({"id": new_id}), 201
@@ -489,11 +539,14 @@ def api_add_student():
         return jsonify({"error": "Нужно fio, group_id, student_no"}), 400
     try:
         db = get_db()
-        if not db.execute("SELECT 1 FROM groups WHERE id=%s",
-                          (int(data["group_id"]),)).fetchone():
+        if not db.execute(
+            "SELECT 1 FROM groups WHERE id=%s", (as_integer(data["group_id"]),)
+        ).fetchone():
             return jsonify({"error": "Такой группы нет"}), 400
-        cur = db.execute("INSERT INTO students(fio,group_id,student_no) VALUES(%s,%s,%s) RETURNING id",
-                         (data["fio"], int(data["group_id"]), data["student_no"]))
+        cur = db.execute(
+            "INSERT INTO students(fio,group_id,student_no) VALUES(%s,%s,%s) RETURNING id",
+            (data["fio"], as_integer(data["group_id"]), data["student_no"]),
+        )
         new_id = cur.fetchone()["id"]
         db.commit()
         return jsonify({"id": new_id}), 201
@@ -516,8 +569,10 @@ def api_add_disc():
         return jsonify({"error": "Нужно name"}), 400
     try:
         db = get_db()
-        cur = db.execute("INSERT INTO disciplines(name,credits) VALUES(%s,%s) RETURNING id",
-                         (data["name"], int(data.get("credits", 3))))
+        cur = db.execute(
+            "INSERT INTO disciplines(name,credits) VALUES(%s,%s) RETURNING id",
+            (data["name"], as_integer(data.get("credits", 3))),
+        )
         new_id = cur.fetchone()["id"]
         db.commit()
         return jsonify({"id": new_id}), 201
@@ -537,14 +592,19 @@ def api_plans():
 def api_add_plan():
     data = json_data()
     try:
-        gid, did, sem = int(data["group_id"]), int(data["discipline_id"]), int(data["semester"])
+        gid, did, sem = (
+            as_integer(data["group_id"]),
+            as_integer(data["discipline_id"]),
+            as_integer(data["semester"]),
+        )
     except (KeyError, ValueError, TypeError):
         return jsonify({"error": "Нужно group_id, discipline_id, semester (числа)"}), 400
     try:
         db = get_db()
         cur = db.execute(
             "INSERT INTO study_plans(group_id,discipline_id,semester) VALUES(%s,%s,%s) RETURNING id",
-            (gid, did, sem))
+            (gid, did, sem),
+        )
         new_id = cur.fetchone()["id"]
         db.commit()
         return jsonify({"id": new_id}), 201
@@ -562,18 +622,27 @@ def api_grades():
 def api_add_grade():
     data = json_data()
     try:
-        sid, did, sem, val = (int(data["student_id"]), int(data["discipline_id"]),
-                              int(data["semester"]), int(data["value"]))
+        sid, did, sem, val = (
+            as_integer(data["student_id"]),
+            as_integer(data["discipline_id"]),
+            as_integer(data["semester"]),
+            as_integer(data["value"]),
+        )
     except (KeyError, ValueError, TypeError):
         return jsonify({"error": "Нужно student_id, discipline_id, semester, value (числа)"}), 400
     err = check_business_rule(sid, did, sem, val)
     if err:
         return jsonify({"error": err}), 400
     try:
+        comment = normalize_comment(data.get("comment"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
         db = get_db()
         cur = db.execute(
-            "INSERT INTO grades(student_id,discipline_id,semester,value) VALUES(%s,%s,%s,%s) RETURNING id",
-            (sid, did, sem, val))
+            "INSERT INTO grades(student_id,discipline_id,semester,value,comment) VALUES(%s,%s,%s,%s,%s) RETURNING id",
+            (sid, did, sem, val, comment),
+        )
         new_id = cur.fetchone()["id"]
         db.commit()
         return jsonify({"id": new_id}), 201
@@ -584,11 +653,15 @@ def api_add_grade():
 
 @app.get("/api/report/avg")
 def api_avg():
-    rows = get_db().execute(
-        """SELECT s.id, s.fio, ROUND(AVG(g.value),2)::double precision as avg_score, COUNT(g.id) as cnt
+    rows = (
+        get_db()
+        .execute(
+            """SELECT s.id, s.fio, ROUND(AVG(g.value),2)::double precision as avg_score, COUNT(g.id) as cnt
            FROM students s LEFT JOIN grades g ON g.student_id=s.id
            GROUP BY s.id ORDER BY avg_score DESC NULLS LAST"""
-    ).fetchall()
+        )
+        .fetchall()
+    )
     return jsonify([dict(r) for r in rows])
 
 
@@ -596,7 +669,10 @@ def api_avg():
 @app.post("/api/register")
 def api_register():
     data = json_data()
-    username, password = (data.get("username") or "").strip(), data.get("password") or ""
+    username = data.get("username")
+    password = data.get("password")
+    username = username.strip() if isinstance(username, str) else ""
+    password = password if isinstance(password, str) else ""
     if len(username) < 3 or len(password) < 4:
         return jsonify({"error": "Логин — от 3 символов, пароль — от 4"}), 400
     try:
@@ -617,7 +693,10 @@ def api_register():
 @app.post("/api/login")
 def api_login():
     data = json_data()
-    username, password = (data.get("username") or "").strip(), data.get("password") or ""
+    username = data.get("username")
+    password = data.get("password")
+    username = username.strip() if isinstance(username, str) else ""
+    password = password if isinstance(password, str) else ""
     row = get_db().execute("SELECT * FROM users WHERE username=%s", (username,)).fetchone()
     if not row or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "Неверный логин или пароль"}), 401
@@ -652,4 +731,4 @@ def nm(e):
 if __name__ == "__main__":
     with app.app_context():
         init_db()
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host=os.environ.get("APP_HOST", "127.0.0.1"), port=PORT)

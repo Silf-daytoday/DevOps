@@ -1,0 +1,271 @@
+{
+  "disciplines": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "name",
+        "text",
+        true,
+        "",
+        null
+      ],
+      [
+        "credits",
+        "integer",
+        true,
+        "",
+        "3"
+      ]
+    ],
+    "constraints": [
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (name)"
+      ]
+    ]
+  },
+  "grades": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "student_id",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "discipline_id",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "semester",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "value",
+        "integer",
+        true,
+        "",
+        null
+      ]
+    ],
+    "constraints": [
+      [
+        "c",
+        "CHECK (((value >= 2) AND (value <= 5)))"
+      ],
+      [
+        "f",
+        "FOREIGN KEY (discipline_id) REFERENCES disciplines(id)"
+      ],
+      [
+        "f",
+        "FOREIGN KEY (student_id) REFERENCES students(id)"
+      ],
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (student_id, discipline_id, semester)"
+      ]
+    ]
+  },
+  "groups": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "name",
+        "text",
+        true,
+        "",
+        null
+      ],
+      [
+        "year",
+        "integer",
+        true,
+        "",
+        null
+      ]
+    ],
+    "constraints": [
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (name)"
+      ]
+    ]
+  },
+  "students": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "fio",
+        "text",
+        true,
+        "",
+        null
+      ],
+      [
+        "group_id",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "student_no",
+        "text",
+        true,
+        "",
+        null
+      ]
+    ],
+    "constraints": [
+      [
+        "f",
+        "FOREIGN KEY (group_id) REFERENCES groups(id)"
+      ],
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (student_no)"
+      ]
+    ]
+  },
+  "study_plans": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "group_id",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "discipline_id",
+        "integer",
+        true,
+        "",
+        null
+      ],
+      [
+        "semester",
+        "integer",
+        true,
+        "",
+        null
+      ]
+    ],
+    "constraints": [
+      [
+        "f",
+        "FOREIGN KEY (discipline_id) REFERENCES disciplines(id)"
+      ],
+      [
+        "f",
+        "FOREIGN KEY (group_id) REFERENCES groups(id)"
+      ],
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (group_id, discipline_id, semester)"
+      ]
+    ]
+  },
+  "users": {
+    "columns": [
+      [
+        "id",
+        "integer",
+        true,
+        "d",
+        null
+      ],
+      [
+        "username",
+        "text",
+        true,
+        "",
+        null
+      ],
+      [
+        "password_hash",
+        "text",
+        true,
+        "",
+        null
+      ],
+      [
+        "role",
+        "text",
+        true,
+        "",
+        "'teacher'::text"
+      ]
+    ],
+    "constraints": [
+      [
+        "p",
+        "PRIMARY KEY (id)"
+      ],
+      [
+        "u",
+        "UNIQUE (username)"
+      ]
+    ]
+  }
+}

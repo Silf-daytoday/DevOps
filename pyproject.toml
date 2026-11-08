@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Mako-шаблон содержит ещё не подставленные выражения и не является готовым Python.
+extend-exclude = ["migrations/script.py.mako"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: PostgreSQL devops_test required",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app", "domain"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+# Ручной Flask dev-launcher не используется Gunicorn/systemd; маршруты учитываются.
+exclude_also = ["if __name__ == .__main__.:"]
