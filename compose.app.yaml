@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: devops-app:0.3.0
+    image: devops-app:0.4.0
     container_name: devops-app
     restart: unless-stopped
     init: true
@@ -14,7 +14,7 @@ services:
       DB_NAME: "devops"
       DB_USER: "devops_app"
       PORT: "5000"
-      APP_VERSION: "0.3.0"
+      APP_VERSION: "0.4.0"
 
     secrets:
       - db_password
