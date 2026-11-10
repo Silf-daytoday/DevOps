@@ -6,7 +6,7 @@ ifeq ($(PRODUCTION),1)
 PROD_FLAG = --production
 endif
 
-.PHONY: setup run test quality migrate baseline backup restore migration-check backup-check mutation verify
+.PHONY: setup run test quality migrate baseline backup restore migration-check backup-check mutation container-check verify
 
 setup:
 	bash scripts/setup.sh
@@ -45,6 +45,8 @@ restore:
 mutation:
 	$(PYTHON) -m lr3_tools.mutation
 
+container-check:
+	bash scripts/container-check.sh
 # Последовательность явная: следующий этап не скрывает ошибку предыдущего.
 # Все обращения к БД внутри verify используют только тестовую конфигурацию.
 verify:
@@ -53,4 +55,5 @@ verify:
 	$(MAKE) migration-check
 	$(MAKE) backup-check
 	$(MAKE) mutation
-	@echo "VERIFY OK: quality, tests, migrations, backup/restore, mutation"
+	$(MAKE) container-check
+	@echo "VERIFY OK: quality, tests, migrations, backup/restore, mutation, containers"

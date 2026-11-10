@@ -33,3 +33,4 @@ data
 .idea
 .DS_Store
 Thumbs.db
+secrets/
