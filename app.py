@@ -1,4 +1,4 @@
-"""Учёт успеваемости студентов. Вариант 8. ЛР3.
+"""Учёт успеваемости студентов. Вариант 8. ЛР5.
 Сущности: groups -> students, disciplines, study_plans, grades, users.
 Бизнес-правило: оценка выставляется только если дисциплина
 включена в учебный план группы студента на указанный семестр (оценка 2–5).
@@ -39,7 +39,7 @@ DB_CONFIG = {
     "row_factory": dict_row,
 }
 PORT = int(os.environ.get("PORT", "5000"))
-APP_VERSION = os.environ.get("APP_VERSION", "0.4.0")
+APP_VERSION = os.environ.get("APP_VERSION", "0.5.0")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 app = Flask(__name__)

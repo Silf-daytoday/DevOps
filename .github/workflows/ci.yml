@@ -83,7 +83,7 @@ jobs:
       DB_NAME: devops_test
       DB_USER: devops_test
       DB_PASSWORD: ci_test_password
-      APP_VERSION: "0.4.0"
+      APP_VERSION: "0.5.0"
       PGPASSWORD: postgres
 
     steps:
