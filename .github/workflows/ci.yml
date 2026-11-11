@@ -144,7 +144,7 @@ jobs:
 
       # 11. Проверка Docker-образа на уязвимости
       - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: devops-app:ci-${{ github.sha }}
           format: json
