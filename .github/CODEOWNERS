@@ -1,0 +1,25 @@
+# Application
+/app.py @JaraWara @Silf-daytoday
+/domain.py @JaraWara @Silf-daytoday
+/migrations/ @JaraWara @Silf-daytoday
+/lr3_tools/ @JaraWara @Silf-daytoday
+
+# Tests and configuration
+/tests/ @JaraWara @Silf-daytoday
+/Makefile @JaraWara @Silf-daytoday
+/pyproject.toml @JaraWara @Silf-daytoday
+/requirements*.txt @JaraWara @Silf-daytoday
+
+# Docker
+/Dockerfile @JaraWara @Silf-daytoday
+/.dockerignore @JaraWara @Silf-daytoday
+/compose*.yaml @JaraWara @Silf-daytoday
+/compose*.yml @JaraWara @Silf-daytoday
+
+# CI/CD
+/.github/workflows/ @JaraWara @Silf-daytoday
+/.github/CODEOWNERS @JaraWara @Silf-daytoday
+
+# Documentation
+/docs/RULES.md @JaraWara @Silf-daytoday
+/docs/CI_CD.md @JaraWara @Silf-daytoday

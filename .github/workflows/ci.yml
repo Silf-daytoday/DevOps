@@ -1,4 +1,3 @@
-
 name: CI Pipeline
 
 on:
@@ -396,7 +395,15 @@ jobs:
       - container
       - build_scan
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.quality.result == 'success' &&
+      needs.tests.result == 'success' &&
+      needs.database.result == 'success' &&
+      needs.security.result == 'success' &&
+      needs.container.result == 'success' &&
+      needs.build_scan.result == 'success'
 
     steps:
       - name: Download verified Docker image
